@@ -1,0 +1,2 @@
+model_checkpoint_path: "D:\\LSP\\Coreograph\\model-4layersMaskAug20New\\model.ckpt"
+all_model_checkpoint_paths: "D:\\LSP\\Coreograph\\model-4layersMaskAug20New\\model.ckpt"
