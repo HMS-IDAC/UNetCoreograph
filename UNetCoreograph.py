@@ -775,7 +775,8 @@ if __name__ == '__main__':
 		singleProbMap = classProbs[np.uint32(y[iCore]*dsFactor):np.uint32(yLim[iCore]*dsFactor),np.uint32(x[iCore]*dsFactor):np.uint32(xLim[iCore]*dsFactor)]
 		singleProbMap = resize(singleProbMap,size(coreSlice),cv2.INTER_NEAREST)
 		TMAmask = coreSegmenterOutput(coreSlice,singleProbMap,initialmask,coreRad/20,False) 
-		
+		if np.sum(TMAmask)==0:
+			TMAmask = np.ones(TMAmask.shape)
 		vsize = int(float(coreSlice.shape[0]))
 		hsize = int(float(coreSlice.shape[1]))
 		masksub = resize(resize(TMAmask,(vsize,hsize),cv2.INTER_NEAREST),(int((float(coreSlice.shape[0])*dsFactor)),int((float(coreSlice.shape[1])*dsFactor))),cv2.INTER_NEAREST)
