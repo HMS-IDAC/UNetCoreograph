@@ -581,9 +581,6 @@ def coreSegmenterOutput(I,probMap,initialmask,preBlur,findCenter):
 	
 #	nuclearMask = chan_vese(nucGF, mu=1.5, lambda1=6, lambda2=1, tol=0.0005, max_iter=2000, dt=15, init_level_set=initialmask, extended_output=True)	
 #	nuclearMask = nuclearMask[0]
-	skio.imsave('D:\\nuclearMask.tif',find_boundaries(nuclearMask)*255 + np.uint8(Irs/np.amax(Irs)*255))
-	skio.imsave('D:\\initialMask.tif',nucGF+find_boundaries(initialmask))
-
   
 	
 	TMAmask = nuclearMask
