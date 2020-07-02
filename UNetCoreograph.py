@@ -644,7 +644,7 @@ if __name__ == '__main__':
 	scriptPath = os.path.dirname(os.path.realpath(__file__))
 	modelPath = os.path.join(scriptPath, 'model')
 #	outputPath = 'D:\\LSP\\cycif\\testsets\\exemplar-002\\dearrayPython'
-	maskOutputPath = outputPath + '\\masks'
+	maskOutputPath = os.path.join(outputPath, 'masks')
 #	imagePath = 'D:\\LSP\\cycif\\testsets\\exemplar-002\\registration\\exemplar-002.ome.tif'
 #	classProbsPath = 'D:\\LSP\\cycif\\testsets\\exemplar-002\\probMapCore\\exemplar-002_CorePM_1.tif'
 #	imagePath = 'Y:\\sorger\\data\\RareCyte\\Connor\\Z155_PTCL\\TMA_552\\registration\\TMA_552.ome.tif'
