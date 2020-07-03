@@ -756,12 +756,12 @@ if __name__ == '__main__':
 		bbox[iCore] = [round(x[iCore]), round(y[iCore]), round(xLim[iCore]), round(yLim[iCore])]
 		
 		for iChan in range(outputChan[0],outputChan[1]+1):
-			with pytiff.Tiff(imagePath) as handle:
+			with pytiff.Tiff(imagePath, "r", encoding='utf-8') as handle:
 				handle.set_page(iChan)
 				coreStack= handle[np.uint32(bbox[iCore][1]):np.uint32(bbox[iCore][3]-1), np.uint32(bbox[iCore][0]):np.uint32(bbox[iCore][2]-1)]
 			skio.imsave(outputPath + os.path.sep + str(iCore+1)  + '.tif',coreStack,append=True)	
 
-		with pytiff.Tiff(imagePath) as handle:
+		with pytiff.Tiff(imagePath, "r", encoding='utf-8') as handle:
 			handle.set_page(args.channel)
 			coreSlice= handle[np.uint32(bbox[iCore][1]):np.uint32(bbox[iCore][3]-1), np.uint32(bbox[iCore][0]):np.uint32(bbox[iCore][2]-1)]
 
