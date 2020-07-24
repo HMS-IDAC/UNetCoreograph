@@ -632,12 +632,14 @@ if __name__ == '__main__':
 	parser.add_argument("--channel",type = int, default = 0)
 	parser.add_argument("--buffer",type = float, default = 2)
 	parser.add_argument("--outputChan", type=int, nargs = '+', default=[-1])
+	parser.add_argument("--sensitivity",type = float, default=0.3)
 	parser.add_argument("--useGrid",action='store_true')
 	parser.add_argument("--cluster",action='store_true')
 	args = parser.parse_args()
 
 	outputPath = args.outputPath
 	imagePath = args.imagePath
+	sensitivity = args.sensitivity
 	#scriptPath = os.path.dirname(os.path.realpath(__file__))
 	#modelPath = os.path.join(scriptPath, 'TFModel - 3class 16 kernels 5ks 2 layers')
 	#modelPath = 'D:\\LSP\\Coreograph\\model-4layersMaskAug20'
@@ -646,7 +648,9 @@ if __name__ == '__main__':
 #	outputPath = 'D:\\LSP\\cycif\\testsets\\exemplar-002\\dearrayPython' ############
 	maskOutputPath = os.path.join(outputPath, 'masks')
 #	imagePath = 'D:\\LSP\\cycif\\testsets\\exemplar-002\\registration\\exemplar-002.ome.tif'###########
-#	classProbsPath = 'D:\\LSP\\cycif\\testsets\\exemplar-002\\probMapCore\\exemplar-002_CorePM_1.tif'
+#	imagePath = 'Y:\\sorger\\data\\RareCyte\\Connor\\TMAs\\CAJ_TMA11_13\\original_data\\TMA11\\registration\\TMA11.ome.tif'
+#	imagePath = 'Y:\\sorger\\data\\RareCyte\\Connor\\TMAs\\Z124_TMA20_22\\TMA22\\registration\\TMA22.ome.tif'
+#	classProbsPath = 'D:\\unetcoreograph.tif'
 #	imagePath = 'Y:\\sorger\\data\\RareCyte\\Connor\\Z155_PTCL\\TMA_552\\registration\\TMA_552.ome.tif'
 #	classProbsPath = 'Y:\\sorger\\data\\RareCyte\\Connor\\Z155_PTCL\\TMA_552\\probMapCore\\TMA_552_CorePM_1.tif'
 #	imagePath = 'Y:\\sorger\\data\\RareCyte\\Zoltan\\Z112_TMA17_19\\190403_ashlar\\TMA17_1092.ome.tif'
@@ -705,14 +709,13 @@ if __name__ == '__main__':
 	estCoreDiam = round(np.sqrt(maxArea/np.pi)*1.2*args.buffer)
 
 #preprocessing
-	fgFiltered = blob_log(preMask,coreRad*0.6,threshold=0.5)
+	fgFiltered = blob_log(preMask,coreRad*0.6,threshold=sensitivity)
 	Imax = np.zeros(preMask.shape,dtype=np.uint8)
 	for iSpot in range(fgFiltered.shape[0]):
 		yi = np.uint32(round(fgFiltered[iSpot, 0]))
 		xi = np.uint32(round(fgFiltered[iSpot, 1]))
 		Imax[yi, xi] = 1
 	Imax = Imax*preMask
-	
 	Idist = distance_transform_edt(1-Imax)
 	markers = label(Imax)
 	coreLabel  = watershed(Idist,markers,watershed_line=True,mask = preMask)
