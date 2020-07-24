@@ -557,7 +557,7 @@ def coreSegmenterOutput(I,probMap,initialmask,preBlur,findCenter):
 	hsize = int((float(I.shape[0]) * float(0.1)))
 	vsize = int((float(I.shape[1]) * float(0.1)))
 	nucGF = cv2.resize(I,(vsize,hsize),cv2.INTER_CUBIC)
-	Irs = cv2.resize(I,(vsize,hsize),cv2.INTER_CUBIC)
+#	Irs = cv2.resize(I,(vsize,hsize),cv2.INTER_CUBIC)
 #	I=I.astype(np.float)
 #	r,c = I.shape
 #	I+=np.random.rand(r,c)*1e-6
@@ -643,9 +643,9 @@ if __name__ == '__main__':
 	#modelPath = 'D:\\LSP\\Coreograph\\model-4layersMaskAug20'
 	scriptPath = os.path.dirname(os.path.realpath(__file__))
 	modelPath = os.path.join(scriptPath, 'model')
-#	outputPath = 'D:\\LSP\\cycif\\testsets\\exemplar-002\\dearrayPython'
+#	outputPath = 'D:\\LSP\\cycif\\testsets\\exemplar-002\\dearrayPython' ############
 	maskOutputPath = os.path.join(outputPath, 'masks')
-#	imagePath = 'D:\\LSP\\cycif\\testsets\\exemplar-002\\registration\\exemplar-002.ome.tif'
+#	imagePath = 'D:\\LSP\\cycif\\testsets\\exemplar-002\\registration\\exemplar-002.ome.tif'###########
 #	classProbsPath = 'D:\\LSP\\cycif\\testsets\\exemplar-002\\probMapCore\\exemplar-002_CorePM_1.tif'
 #	imagePath = 'Y:\\sorger\\data\\RareCyte\\Connor\\Z155_PTCL\\TMA_552\\registration\\TMA_552.ome.tif'
 #	classProbsPath = 'Y:\\sorger\\data\\RareCyte\\Connor\\Z155_PTCL\\TMA_552\\probMapCore\\TMA_552_CorePM_1.tif'
@@ -770,7 +770,7 @@ if __name__ == '__main__':
 		initialmask = resize(initialmask,size(coreSlice),cv2.INTER_NEAREST)
 
 		singleProbMap = classProbs[np.uint32(y[iCore]*dsFactor):np.uint32(yLim[iCore]*dsFactor),np.uint32(x[iCore]*dsFactor):np.uint32(xLim[iCore]*dsFactor)]
-		singleProbMap = resize(singleProbMap,size(coreSlice),cv2.INTER_NEAREST)
+		singleProbMap = resize(np.uint8(255*singleProbMap),size(coreSlice),cv2.INTER_NEAREST)
 		TMAmask = coreSegmenterOutput(coreSlice,singleProbMap,initialmask,coreRad/20,False) 
 		if np.sum(TMAmask)==0:
 			TMAmask = np.ones(TMAmask.shape)
@@ -781,7 +781,6 @@ if __name__ == '__main__':
 		maskTMA = maskTMA + resize(singleMaskTMA,maskTMA.shape,cv2.INTER_NEAREST)
 		cv2.putText(imagesub, str(iCore+1), (int(P[iCore].centroid[1]),int(P[iCore].centroid[0])), 0, 0.5, (np.amax(imagesub), np.amax(imagesub), np.amax(imagesub)), 1, cv2.LINE_AA)
 		
-#		skio.imsave(maskOutputPath + os.path.sep + str(iCore+1)  + '_mask.tif',find_boundaries(TMAmask)+resize(coreSlice/np.percentile(coreSlice,99),TMAmask.shape))
 		skio.imsave(maskOutputPath + os.path.sep + str(iCore+1)  + '_mask.tif',np.uint8(TMAmask))
 		print('Segmented core ' + str(iCore+1))	
 		
