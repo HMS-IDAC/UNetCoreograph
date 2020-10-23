@@ -16,7 +16,7 @@ from skimage.measure import regionprops,label, find_contours
 from skimage.transform import resize
 from skimage.filters import gaussian
 from skimage.feature import peak_local_max,blob_log
-from skimage.color import label2rgb
+from skimage.color import gray2rgb as gray2rgb
 import skimage.io as skio
 from skimage import img_as_bool
 from skimage.draw import circle_perimeter
@@ -541,7 +541,7 @@ def getProbMaps(I,dsFactor,modelPath):
    vsize = int((float(I.shape[1]) * float(0.5)))
    imagesub = cv2.resize(I,(vsize,hsize),cv2.INTER_NEAREST)
 
-   UNet2D.singleImageInferenceSetup(modelPath, 1)
+   UNet2D.singleImageInferenceSetup(modelPath, 0)
 
    for iSize in range(dsFactor):
 	   hsize = int((float(I.shape[0]) * float(0.5)))
@@ -650,7 +650,7 @@ if __name__ == '__main__':
 #	imagePath = 'D:\\LSP\\cycif\\testsets\\exemplar-002\\registration\\exemplar-002.ome.tif'###########
 #	imagePath = 'Y:\\sorger\\data\\RareCyte\\Connor\\TMAs\\CAJ_TMA11_13\\original_data\\TMA11\\registration\\TMA11.ome.tif'
 #	imagePath = 'Y:\\sorger\\data\\RareCyte\\Connor\\TMAs\\Z124_TMA20_22\\TMA22\\registration\\TMA22.ome.tif'
-#	classProbsPath = 'D:\\unetcoreograph.tif'
+#	classProbsPath = 'D:\\LSP\\cycif\\testsets\\exemplar-002\\probMapCore\\exemplar-002_CorePM_1.tif'
 #	imagePath = 'Y:\\sorger\\data\\RareCyte\\Connor\\Z155_PTCL\\TMA_552\\registration\\TMA_552.ome.tif'
 #	classProbsPath = 'Y:\\sorger\\data\\RareCyte\\Connor\\Z155_PTCL\\TMA_552\\probMapCore\\TMA_552_CorePM_1.tif'
 #	imagePath = 'Y:\\sorger\\data\\RareCyte\\Zoltan\\Z112_TMA17_19\\190403_ashlar\\TMA17_1092.ome.tif'
@@ -732,8 +732,9 @@ if __name__ == '__main__':
 	singleMaskTMA = np.zeros(imagesub.shape)
 	maskTMA = np.zeros(imagesub.shape)
 	bbox = [None] * numCores
-
- 
+	imagesub = imagesub/np.percentile(imagesub,99.9)
+	imagesub = (imagesub * 255).round().astype(np.uint8)
+	imagesub = gray2rgb(imagesub)
 	x=np.zeros(numCores)
 	xLim=np.zeros(numCores)
 	y=np.zeros(numCores)
@@ -762,7 +763,7 @@ if __name__ == '__main__':
 			with pytiff.Tiff(imagePath, "r", encoding='utf-8') as handle:
 				handle.set_page(iChan)
 				coreStack= handle[np.uint32(bbox[iCore][1]):np.uint32(bbox[iCore][3]-1), np.uint32(bbox[iCore][0]):np.uint32(bbox[iCore][2]-1)]
-			skio.imsave(outputPath + os.path.sep + str(iCore+1)  + '.tif',coreStack,append=True)	
+			skio.imsave(outputPath + os.path.sep + str(iCore+1)  + '.tif',coreStack,append=True)
 
 		with pytiff.Tiff(imagePath, "r", encoding='utf-8') as handle:
 			handle.set_page(args.channel)
@@ -782,17 +783,16 @@ if __name__ == '__main__':
 		masksub = resize(resize(TMAmask,(vsize,hsize),cv2.INTER_NEAREST),(int((float(coreSlice.shape[0])*dsFactor)),int((float(coreSlice.shape[1])*dsFactor))),cv2.INTER_NEAREST)
 		singleMaskTMA[int(y[iCore]*dsFactor):int(y[iCore]*dsFactor)+masksub.shape[0],int(x[iCore]*dsFactor):int(x[iCore]*dsFactor)+masksub.shape[1]]=masksub
 		maskTMA = maskTMA + resize(singleMaskTMA,maskTMA.shape,cv2.INTER_NEAREST)
-		cv2.putText(imagesub, str(iCore+1), (int(P[iCore].centroid[1]),int(P[iCore].centroid[0])), 0, 0.5, (np.amax(imagesub), np.amax(imagesub), np.amax(imagesub)), 1, cv2.LINE_AA)
+
+		cv2.putText(imagesub, str(iCore+1), (int(P[iCore].centroid[1]),int(P[iCore].centroid[0])), 0, 0.5, (0,255,0), 1, cv2.LINE_AA)
 		
 		skio.imsave(maskOutputPath + os.path.sep + str(iCore+1)  + '_mask.tif',np.uint8(TMAmask))
 		print('Segmented core ' + str(iCore+1))	
 		
 	boundaries = find_boundaries(maskTMA)
-	imagesub = imagesub/np.percentile(imagesub,99.9)
-	imagesub[boundaries==1] = 1
-	skio.imsave(outputPath + os.path.sep + 'TMA_MAP.tif' ,np.uint8(imagesub*255))
+	imagesub[boundaries==1] = 255
+	skio.imsave(outputPath + os.path.sep + 'TMA_MAP.tif' ,imagesub)
 	print('Segmented all cores!')
-	
 
 #restore GPU to 0
 	#image load using tifffile
