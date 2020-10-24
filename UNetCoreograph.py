@@ -758,13 +758,13 @@ if __name__ == '__main__':
 			y[iCore]=1
 
 		bbox[iCore] = [round(x[iCore]), round(y[iCore]), round(xLim[iCore]), round(yLim[iCore])]
-		
+		coreStack = np.zeros((numChan,np.int(round(yLim[iCore])-round(y[iCore])-1),np.int(round(xLim[iCore])-round(x[iCore])-1)))
 		for iChan in range(outputChan[0],outputChan[1]+1):
 			with pytiff.Tiff(imagePath, "r", encoding='utf-8') as handle:
 				handle.set_page(iChan)
-				coreStack= handle[np.uint32(bbox[iCore][1]):np.uint32(bbox[iCore][3]-1), np.uint32(bbox[iCore][0]):np.uint32(bbox[iCore][2]-1)]
-			skio.imsave(outputPath + os.path.sep + str(iCore+1)  + '.tif',coreStack,append=True)
-
+				coreStack[iChan,:,:] =handle[np.uint32(bbox[iCore][1]):np.uint32(bbox[iCore][3]-1), np.uint32(bbox[iCore][0]):np.uint32(bbox[iCore][2]-1)]
+#			skio.imsave(outputPath + os.path.sep + str(iCore+1)  + '.tif',coreStack,append=True)
+		skio.imsave(outputPath + os.path.sep + str(iCore+1)  + '.tif',np.uint16(coreStack),imagej=True,bigtiff=True)
 		with pytiff.Tiff(imagePath, "r", encoding='utf-8') as handle:
 			handle.set_page(args.channel)
 			coreSlice= handle[np.uint32(bbox[iCore][1]):np.uint32(bbox[iCore][3]-1), np.uint32(bbox[iCore][0]):np.uint32(bbox[iCore][2]-1)]
