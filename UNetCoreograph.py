@@ -544,7 +544,7 @@ def getProbMaps(I,dsFactor,modelPath):
    vsize = int((float(I.shape[1]) * float(0.5)))
    imagesub = cv2.resize(I,(vsize,hsize),cv2.INTER_NEAREST)
 
-   UNet2D.singleImageInferenceSetup(modelPath, 1)
+   UNet2D.singleImageInferenceSetup(modelPath, 0)
 
    for iSize in range(dsFactor):
 	   hsize = int((float(I.shape[0]) * float(0.5)))
