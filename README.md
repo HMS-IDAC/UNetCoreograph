@@ -22,5 +22,5 @@ Training sets were acquired at 0.2micron/pixel resolution and downsampled 1/32 t
 3. `--downsampleFactor` : how many times to downsample the raw image file. Default is 5 times to match the training data.
 4. `--channel` : which is the channel to feed into UNet and generate probabiltiy maps from. This is usually a DAPI channel
 5. `--buffer` : the extra space around a core before cropping it. A value of 2 means there is twice the width of the core added as buffer around it. 2 is default
-6. `--outputChan` : a range of channels to be exported. -1 is default and will export all channels (takes awhile). Select a single channel or a continuous range. --outputChan 0 10 will export channel 0 up to (and NOT including) channel 10
+6. `--outputChan` : a range of channels to be exported. -1 is default and will export all channels (takes awhile). Select a single channel or a continuous range. --outputChan 0 10 will export channel 0 up to (and including) channel 10
 
