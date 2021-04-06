@@ -524,63 +524,6 @@ if __name__ == '__main__':
 	UNet2D.train(imPath, logPath, modelPath, pmPath, 2053, 513 , 641, True, 10, 1, 1)
 	UNet2D.deploy(imPath,100,modelPath,pmPath,1,1)
 
-	# I = im2double(tifread('/home/mc457/files/CellBiology/IDAC/Marcelo/Etc/UNetTestSets/SinemSaka_NucleiSegmentation_SingleImageInferenceTest3.tif'))
-	# UNet2D.singleImageInferenceSetup(modelPath,0)
-	# J = UNet2D.singleImageInference(I,'accumulate',0)
-	# UNet2D.singleImageInferenceCleanup()
-	# # imshowlist([I,J])
-	# # sys.exit(0)
-	# # tifwrite(np.uint8(255*I),'/home/mc457/Workspace/I1.tif')
-	# # tifwrite(np.uint8(255*J),'/home/mc457/Workspace/I2.tif')
-	# K = np.zeros((2,I.shape[0],I.shape[1]))
-	# K[0,:,:] = I
-	# K[1,:,:] = J
-	# tifwrite(np.uint8(255*K),'/home/mc457/Workspace/Sinem_NucSeg.tif')
-
-	# UNet2D.singleImageInferenceSetup(modelPath,0)
-	# imagePath = 'Y://sorger//data//RareCyte//Connor//Topacio_P2_AF//ashlar//C0078'
-	#
-	# fileList = glob.glob(imagePath + '//registration//C0078.ome.tif')
-	# print(fileList)
-	# for iFile in fileList:
-	# 	fileName = os.path.basename(iFile)
-	# 	fileNamePrefix = fileName.split(os.extsep, 1)
-	# 	I = im2double(tifffile.imread(iFile, key=0))
-	# 	hsize = int((float(I.shape[0])*float(0.75)))
-	# 	vsize = int((float(I.shape[1])*float(0.75)))
-	# 	I = resize(I,(hsize,vsize))
-	# 	J = UNet2D.singleImageInference(I,'accumulate',1)
-	# 	K = np.zeros((3,I.shape[0],I.shape[1]))
-	# 	K[2,:,:] = I
-	# 	K[0,:,:] = J
-	# 	J = UNet2D.singleImageInference(I, 'accumulate', 2)
-	# 	K[1, :, :] = J
-	# 	outputPath = imagePath + '//prob_maps'
-	# 	if not os.path.exists(outputPath):
-	# 		os.makedirs(outputPath)
-	# 	tifwrite(np.uint8(255*K),outputPath + '//' + fileNamePrefix[0] +'_NucSeg.tif')
-	# UNet2D.singleImageInferenceCleanup()
 
 
-	# ----- test 2 -----
 
-	# imPath = '/home/mc457/files/CellBiology/IDAC/Marcelo/Etc/UNetTestSets/ClarenceYapp_NucleiSegmentation'
-	# UNet2D.setup(128,1,2,8,2,2,3,1,0.1,3,4)
-	# UNet2D.train(imPath,logPath,modelPath,pmPath,800,100,100,False,10,1)
-	# UNet2D.deploy(imPath,100,modelPath,pmPath,1)
-
-
-	# ----- test 3 -----
-
-	# imPath = '/home/mc457/files/CellBiology/IDAC/Marcelo/Etc/UNetTestSets/CarmanLi_CellTypeSegmentation'
-	# # UNet2D.setup(256,1,2,8,2,2,3,1,0.1,3,4)
-	# # UNet2D.train(imPath,logPath,modelPath,pmPath,1400,100,164,False,10000,1)
-	# UNet2D.deploy(imPath,164,modelPath,pmPath,1)
-
-
-	# ----- test 4 -----
-
-	# imPath = '/home/cicconet/Downloads/TrainSet1'
-	# UNet2D.setup(64,1,2,8,2,2,3,1,0.1,3,4)
-	# UNet2D.train(imPath,logPath,modelPath,pmPath,200,8,8,False,2000,1,0)
-	# # UNet2D.deploy(imPath,164,modelPath,pmPath,1)
