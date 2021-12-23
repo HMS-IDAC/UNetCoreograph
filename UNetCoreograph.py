@@ -17,10 +17,11 @@ from skimage.exposure import rescale_intensity
 from skimage.segmentation import chan_vese, find_boundaries, morphological_chan_vese
 from skimage.measure import regionprops,label, find_contours
 from skimage.transform import resize
-from skimage.filters import gaussian
+from skimage.filters import gaussian, threshold_otsu
 from skimage.feature import peak_local_max,blob_log
 from skimage.color import gray2rgb as gray2rgb
 import skimage.io as skio
+from scipy.ndimage.morphology import binary_fill_holes
 from skimage import img_as_bool
 from skimage.draw import circle_perimeter
 from scipy.ndimage.filters import uniform_filter
@@ -556,42 +557,22 @@ def getProbMaps(I,dsFactor,modelPath):
    UNet2D.singleImageInferenceCleanup()
    return probMaps 
 
-def coreSegmenterOutput(I,probMap,initialmask,preBlur,findCenter):
+def coreSegmenterOutput(I,initialmask,findCenter):
 	hsize = int((float(I.shape[0]) * float(0.1)))
 	vsize = int((float(I.shape[1]) * float(0.1)))
 	nucGF = cv2.resize(I,(vsize,hsize),cv2.INTER_CUBIC)
-#	Irs = cv2.resize(I,(vsize,hsize),cv2.INTER_CUBIC)
-#	I=I.astype(np.float)
-#	r,c = I.shape
-#	I+=np.random.rand(r,c)*1e-6
-#	c1 = uniform_filter(I, 3, mode='reflect')
-#	c2 = uniform_filter(I*I, 3, mode='reflect')
-#	nucGF = np.sqrt(c2 - c1*c1)*np.sqrt(9./8)
-#	nucGF[np.isnan(nucGF)]=0
 	#active contours
 	hsize = int(float(nucGF.shape[0]))
 	vsize = int(float(nucGF.shape[1]))
 	initialmask = cv2.resize(initialmask,(vsize,hsize),cv2.INTER_NEAREST)
 	initialmask = dilation(initialmask,disk(15)) >0
 
-#	init=np.argwhere(eroded>0)
 	nucGF = gaussian(nucGF,0.7)
 	nucGF=nucGF/np.amax(nucGF)
 	
-
-#	initialmask = nucGF>0
 	nuclearMask = morphological_chan_vese(nucGF, 100, init_level_set=initialmask, smoothing=10,lambda1=1.001, lambda2=1)
 	
-#	nuclearMask = chan_vese(nucGF, mu=1.5, lambda1=6, lambda2=1, tol=0.0005, max_iter=2000, dt=15, init_level_set=initialmask, extended_output=True)
-#	nuclearMask = nuclearMask[0]
-
-
 	TMAmask = nuclearMask
-#	nMaskDist =distance_transform_edt(nuclearMask)
-#	fgm = peak_local_max(h_maxima(nMaskDist, 2*preBlur),indices =False)
-#	markers= np.logical_or(erosion(1-nuclearMask,disk(3)),fgm)
-#	TMAmask=watershed(-nMaskDist,label(markers),watershed_line=True)
-#	TMAmask = nuclearMask*(TMAmask>0)
 	TMAmask = remove_small_objects(TMAmask>0,round(TMAmask.shape[0])*round(TMAmask.shape[1])*0.005)
 	TMAlabel = label(TMAmask)
 # find object closest to center
@@ -631,6 +612,7 @@ if __name__ == '__main__':
 	parser.add_argument("--imagePath")
 	parser.add_argument("--outputPath")
 	parser.add_argument("--maskPath")
+	parser.add_argument("--tissue", action='store_true')
 	parser.add_argument("--downsampleFactor",type = int, default = 5)
 	parser.add_argument("--channel",type = int, default = 0)
 	parser.add_argument("--buffer",type = float, default = 2)
@@ -643,23 +625,9 @@ if __name__ == '__main__':
 	outputPath = args.outputPath
 	imagePath = args.imagePath
 	sensitivity = args.sensitivity
-	#scriptPath = os.path.dirname(os.path.realpath(__file__))
-	#modelPath = os.path.join(scriptPath, 'TFModel - 3class 16 kernels 5ks 2 layers')
-	#modelPath = 'D:\\LSP\\Coreograph\\model-4layersMaskAug20'
 	scriptPath = os.path.dirname(os.path.realpath(__file__))
 	modelPath = os.path.join(scriptPath, 'model')
-#	outputPath = 'D:\\LSP\\cycif\\testsets\\exemplar-002\\dearrayPython' ############
 	maskOutputPath = os.path.join(outputPath, 'masks')
-#	imagePath = 'D:\\LSP\\cycif\\testsets\\exemplar-002\\registration\\exemplar-002.ome.tif'###########
-#	imagePath = 'Y:\\sorger\\data\\RareCyte\\Connor\\TMAs\\CAJ_TMA11_13\\original_data\\TMA11\\registration\\TMA11.ome.tif'
-#	imagePath = 'Y:\\sorger\\data\\RareCyte\\Connor\\TMAs\\Z124_TMA20_22\\TMA22\\registration\\TMA22.ome.tif'
-#	classProbsPath = 'D:\\LSP\\cycif\\testsets\\exemplar-002\\probMapCore\\exemplar-002_CorePM_1.tif'
-#	imagePath = 'Y:\\sorger\\data\\RareCyte\\Connor\\Z155_PTCL\\TMA_552\\registration\\TMA_552.ome.tif'
-#	classProbsPath = 'Y:\\sorger\\data\\RareCyte\\Connor\\Z155_PTCL\\TMA_552\\probMapCore\\TMA_552_CorePM_1.tif'
-#	imagePath = 'Y:\\sorger\\data\\RareCyte\\Zoltan\\Z112_TMA17_19\\190403_ashlar\\TMA17_1092.ome.tif'
-#	classProbsPath = 'Z:\\IDAC\\Clarence\\LSP\\CyCIF\\TMA\\probMapCore\\1new_CorePM_1.tif'
-#	imagePath = 'Y:\\sorger\\data\\RareCyte\\ANNIINA\\Julia\\2018\\TMA6\\julia_tma6.ome.tif'
-#	classProbsPath = 'Z:\\IDAC\\Clarence\\LSP\\CyCIF\\TMA\\probMapCore\\3new_CorePM_1.tif'
 
 	
 #	if not os.path.exists(outputPath):
@@ -668,13 +636,11 @@ if __name__ == '__main__':
 #		shutil.rmtree(outputPath)
 	if not os.path.exists(maskOutputPath):
 		os.makedirs(maskOutputPath)
-
-
-	channel = args.channel 
+	print(
+		'WARNING! IF USING FOR TISSUE SPLITTING, IT IS ADVISED TO SET --downsampleFactor TO HIGHER THAN DEFAULT OF 5')
+	channel = args.channel
 	dsFactor = 1/(2**args.downsampleFactor)
-#	I = tifffile.imread(imagePath, key=channel)
 	I = skio.imread(imagePath, img_num=channel)
-
 	imagesub = resize(I,(int((float(I.shape[0]) * dsFactor)),int((float(I.shape[1]) * dsFactor))))
 	numChan = identifyNumChan(imagePath)
 	
@@ -684,53 +650,71 @@ if __name__ == '__main__':
 			outputChan = [0, numChan-1]
 		else:
 			outputChan.append(outputChan[0])
-	
-	classProbs = getProbMaps(I,args.downsampleFactor,modelPath)
-	# skio.imsave(outputPath + os.path.sep + 'classProbs.tif', classProbs)
-#	classProbs = tifffile.imread(classProbsPath,key=0)
-	preMask = gaussian(np.uint8(classProbs*255),1)>0.8
-	
-	P = regionprops(label(preMask),cache=False)
-	area = [ele.area for ele in P]
-	if len(P) <3:
-		medArea = np.median(area)
-		maxArea = np.percentile(area,99)
+	classProbs = getProbMaps(I, args.downsampleFactor, modelPath)
+
+	if not args.tissue:
+		print('TMA mode selected')
+		preMask = gaussian(np.uint8(classProbs*255),1)>0.8
+
+		P = regionprops(label(preMask),cache=False)
+		area = [ele.area for ele in P]
+		if len(P) <3:
+			medArea = np.median(area)
+			maxArea = np.percentile(area,99)
+		else:
+			count=0
+			labelpreMask = np.zeros(preMask.shape,dtype=np.uint32)
+			for props in P:
+					count += 1
+					yi = props.coords[:, 0]
+					xi = props.coords[:, 1]
+					labelpreMask[yi, xi] = count
+					P=regionprops(labelpreMask)
+					area = [ele.area for ele in P]
+			medArea =  np.median(area)
+			maxArea = np.percentile(area,99)
+		preMask = remove_small_objects(preMask,0.2*medArea)
+		coreRad = round(np.sqrt(medArea/np.pi))
+		estCoreDiam = round(np.sqrt(maxArea/np.pi)*1.2*args.buffer)
+
+		#preprocessing
+		fgFiltered = blob_log(preMask,coreRad*0.6,threshold=sensitivity)
+		Imax = np.zeros(preMask.shape,dtype=np.uint8)
+		for iSpot in range(fgFiltered.shape[0]):
+			yi = np.uint32(round(fgFiltered[iSpot, 0]))
+			xi = np.uint32(round(fgFiltered[iSpot, 1]))
+			Imax[yi, xi] = 1
+		Imax = Imax*preMask
+		Idist = distance_transform_edt(1-Imax)
+		markers = label(Imax)
+		coreLabel  = watershed(Idist,markers,watershed_line=True,mask = preMask)
+		P = regionprops(coreLabel)
+		centroids = np.array([ele.centroid for ele in P]) / dsFactor
+		np.savetxt(outputPath + os.path.sep + 'centroidsY-X.txt', np.asarray(centroids), fmt='%10.5f')
+		numCores = len(centroids)
+		print(str(numCores) + ' cores detected!')
+		estCoreDiamX = np.ones(numCores) * estCoreDiam / dsFactor
+		estCoreDiamY = np.ones(numCores) * estCoreDiam / dsFactor
 	else:
-		count=0
-		labelpreMask = np.zeros(preMask.shape,dtype=np.uint32)
-		for props in P:
-				count += 1
-				yi = props.coords[:, 0]
-				xi = props.coords[:, 1]
-				labelpreMask[yi, xi] = count              
-				P=regionprops(labelpreMask)
-				area = [ele.area for ele in P]
-		medArea =  np.median(area)
-		maxArea = np.percentile(area,99)
-	preMask = remove_small_objects(preMask,0.2*medArea)
-	coreRad = round(np.sqrt(medArea/np.pi))
-	estCoreDiam = round(np.sqrt(maxArea/np.pi)*1.2*args.buffer)
+		print('Tissue mode selected')
+		imageblur = 5
+		Iblur = gaussian(np.uint8(255*classProbs), imageblur)
+		coreMask = binary_fill_holes(binary_closing(Iblur > threshold_otsu(Iblur), np.ones((imageblur*2,imageblur*2))))
+		coreMask = remove_small_objects(coreMask, min_size=0.1 * coreMask.shape[0] * coreMask.shape[1])
+		coreLabel = label(coreMask)
+		## watershed no longer needed since switching to UNet
+		# Idist = distance_transform_edt(coreMask)
+		# markers = peak_local_max(h_maxima(Idist,10),indices=False)
+		# markers = label(markers).astype(np.int8)
+		# coreLabel = watershed(-Idist, markers, watershed_line=True,mask = coreMask)
 
-#preprocessing
-	fgFiltered = blob_log(preMask,coreRad*0.6,threshold=sensitivity)
-	Imax = np.zeros(preMask.shape,dtype=np.uint8)
-	for iSpot in range(fgFiltered.shape[0]):
-		yi = np.uint32(round(fgFiltered[iSpot, 0]))
-		xi = np.uint32(round(fgFiltered[iSpot, 1]))
-		Imax[yi, xi] = 1
-	Imax = Imax*preMask
-	Idist = distance_transform_edt(1-Imax)
-	markers = label(Imax)
-	coreLabel  = watershed(Idist,markers,watershed_line=True,mask = preMask)
-	P = regionprops(coreLabel)
-	centroids = np.array([ele.centroid for ele in P])/dsFactor
-	np.savetxt(outputPath + os.path.sep + 'centroidsY-X.txt', np.asarray(centroids), fmt='%10.5f')
-	# skio.imsave(outputPath + os.path.sep + 'centroids.tif', np.int8(255*resize(coreLabel>0, (int(float(I.shape[0])), int(float(I.shape[1]))))))
-
-	numCores = len(centroids)
-	print(str(numCores) + ' cores detected!')
-	estCoreDiamX = np.ones(numCores)*estCoreDiam/dsFactor
-	estCoreDiamY = np.ones(numCores)*estCoreDiam/dsFactor
+		P = regionprops(coreLabel)
+		centroids = np.array([ele.centroid for ele in P]) / dsFactor
+		np.savetxt(outputPath + os.path.sep + 'centroidsY-X.txt', np.asarray(centroids), fmt='%10.5f')
+		numCores = len(centroids)
+		print(str(numCores) + ' tissues detected!')
+		estCoreDiamX = np.array([(ele.bbox[3]-ele.bbox[1])*1.1 for ele in P]) / dsFactor
+		estCoreDiamY = np.array([(ele.bbox[2]-ele.bbox[0])*1.1 for ele in P]) / dsFactor
 
 	if numCores ==0 & args.cluster:
 		print('No cores detected. Try adjusting the downsample factor')
@@ -765,7 +749,7 @@ if __name__ == '__main__':
 			y[iCore]=1
 
 		bbox[iCore] = [round(x[iCore]), round(y[iCore]), round(xLim[iCore]), round(yLim[iCore])]
-		coreStack = np.zeros((outputChan[1]-outputChan[0]+1,np.int(round(yLim[iCore])-round(y[iCore])-1),np.int(round(xLim[iCore])-round(x[iCore])-1)))
+		coreStack = np.zeros((outputChan[1]-outputChan[0]+1,np.int(round(yLim[iCore])-round(y[iCore])-1),np.int(round(xLim[iCore])-round(x[iCore])-1)),dtype='uint16')
 
 		for iChan in range(outputChan[0],outputChan[1]+1):
 			with pytiff.Tiff(imagePath, "r", encoding='utf-8') as handle:
@@ -778,12 +762,18 @@ if __name__ == '__main__':
 			coreSlice= handle[np.uint32(bbox[iCore][1]):np.uint32(bbox[iCore][3]-1), np.uint32(bbox[iCore][0]):np.uint32(bbox[iCore][2]-1)]
 
 		core = (coreLabel ==(iCore+1))
-		initialmask = core[np.uint32(y[iCore]*dsFactor):np.uint32(yLim[iCore]*dsFactor),np.uint32(x[iCore]*dsFactor):np.uint32(xLim[iCore]*dsFactor)]
-		initialmask = resize(initialmask,size(coreSlice),cv2.INTER_NEAREST)
+		initialmask = core[np.uint32(y[iCore] * dsFactor):np.uint32(yLim[iCore] * dsFactor),
+					  np.uint32(x[iCore] * dsFactor):np.uint32(xLim[iCore] * dsFactor)]
+		if not args.tissue:
+			initialmask = resize(initialmask,size(coreSlice),cv2.INTER_NEAREST)
 
-		singleProbMap = classProbs[np.uint32(y[iCore]*dsFactor):np.uint32(yLim[iCore]*dsFactor),np.uint32(x[iCore]*dsFactor):np.uint32(xLim[iCore]*dsFactor)]
-		singleProbMap = resize(np.uint8(255*singleProbMap),size(coreSlice),cv2.INTER_NEAREST)
-		TMAmask = coreSegmenterOutput(coreSlice,singleProbMap,initialmask,coreRad/20,False) 
+			singleProbMap = classProbs[np.uint32(y[iCore]*dsFactor):np.uint32(yLim[iCore]*dsFactor),np.uint32(x[iCore]*dsFactor):np.uint32(xLim[iCore]*dsFactor)]
+			singleProbMap = resize(np.uint8(255*singleProbMap),size(coreSlice),cv2.INTER_NEAREST)
+			TMAmask = coreSegmenterOutput(coreSlice,initialmask,False)
+		else:
+			Irs = resize(coreSlice,(int((float(coreSlice.shape[0]) * 0.25)),int((float(coreSlice.shape[1]) * 0.25))))
+			TMAmask = coreSegmenterOutput(Irs, np.uint8(initialmask), False)
+
 		if np.sum(TMAmask)==0:
 			TMAmask = np.ones(TMAmask.shape)
 		vsize = int(float(coreSlice.shape[0]))
@@ -795,12 +785,12 @@ if __name__ == '__main__':
 		cv2.putText(imagesub, str(iCore+1), (int(P[iCore].centroid[1]),int(P[iCore].centroid[0])), 0, 0.5, (0,255,0), 1, cv2.LINE_AA)
 		
 		skio.imsave(maskOutputPath + os.path.sep + str(iCore+1)  + '_mask.tif',np.uint8(TMAmask))
-		print('Segmented core ' + str(iCore+1))	
+		print('Segmented core/tissue ' + str(iCore+1))
 		
 	boundaries = find_boundaries(maskTMA)
 	imagesub[boundaries==1] = 255
 	skio.imsave(outputPath + os.path.sep + 'TMA_MAP.tif' ,imagesub)
-	print('Segmented all cores!')
+	print('Segmented all cores/tissues!')
 
 #restore GPU to 0
 	#image load using tifffile
