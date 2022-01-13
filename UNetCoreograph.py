@@ -613,7 +613,7 @@ if __name__ == '__main__':
 	parser.add_argument("--outputPath")
 	parser.add_argument("--maskPath")
 	parser.add_argument("--tissue", action='store_true')
-	parser.add_argument("--downsampleFactor",type = int, default = 5)
+	parser.add_argument("--downsampleFactor", type=int, default = 5)
 	parser.add_argument("--channel",type = int, default = 0)
 	parser.add_argument("--buffer",type = float, default = 2)
 	parser.add_argument("--outputChan", type=int, nargs = '+', default=[-1])
@@ -623,7 +623,7 @@ if __name__ == '__main__':
 	args = parser.parse_args()
 
 	outputPath = args.outputPath
-	imagePath = args.imagePath
+	imagePath =  args.imagePath
 	sensitivity = args.sensitivity
 	scriptPath = os.path.dirname(os.path.realpath(__file__))
 	modelPath = os.path.join(scriptPath, 'model')
@@ -700,13 +700,13 @@ if __name__ == '__main__':
 		imageblur = 5
 		Iblur = gaussian(np.uint8(255*classProbs), imageblur)
 		coreMask = binary_fill_holes(binary_closing(Iblur > threshold_otsu(Iblur), np.ones((imageblur*2,imageblur*2))))
-		coreMask = remove_small_objects(coreMask, min_size=0.1 * coreMask.shape[0] * coreMask.shape[1])
-		coreLabel = label(coreMask)
-		## watershed no longer needed since switching to UNet
-		# Idist = distance_transform_edt(coreMask)
-		# markers = peak_local_max(h_maxima(Idist,10),indices=False)
-		# markers = label(markers).astype(np.int8)
-		# coreLabel = watershed(-Idist, markers, watershed_line=True,mask = coreMask)
+		coreMask = remove_small_objects(coreMask, min_size=0.001 * coreMask.shape[0] * coreMask.shape[1])
+
+		## watershed
+		Idist = distance_transform_edt(coreMask)
+		markers = peak_local_max(h_maxima(Idist,20),indices=False)
+		markers = label(markers).astype(np.int8)
+		coreLabel = watershed(-Idist, markers, watershed_line=True,mask = coreMask)
 
 		P = regionprops(coreLabel)
 		centroids = np.array([ele.centroid for ele in P]) / dsFactor
