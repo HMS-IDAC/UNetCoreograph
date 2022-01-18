@@ -529,13 +529,17 @@ class UNet2D:
 
 
 def identifyNumChan(path):
-   tiff = tifffile.TiffFile(path)
-   shape = tiff.pages[0].shape
-   for i, page in enumerate(tiff.pages):
-	   if page.shape != shape:
-		   numChan = i
-		   return numChan
-		   break
+
+	s = tifffile.TiffFile(path).series[0]
+	return s.shape[0] if len(s.shape) > 2 else 1
+   # shape = tiff.pages[0].shape
+   # tiff = tifffile.TiffFile(path)
+   # for i, page in enumerate(tiff.pages):
+	#    print(page.shape)
+	#    if page.shape != shape:
+	# 	   numChan = i
+	# 	   return numChan
+	# 	   break
 #	   else:
 #		   raise Exception("Did not find any pyramid subresolutions") 
 
@@ -643,7 +647,7 @@ if __name__ == '__main__':
 	I = skio.imread(imagePath, img_num=channel)
 	imagesub = resize(I,(int((float(I.shape[0]) * dsFactor)),int((float(I.shape[1]) * dsFactor))))
 	numChan = identifyNumChan(imagePath)
-	
+
 	outputChan = args.outputChan
 	if len(outputChan)==1:
 		if outputChan[0]==-1:
