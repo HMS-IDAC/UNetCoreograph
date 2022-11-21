@@ -644,7 +644,7 @@ if __name__ == '__main__':
 		'WARNING! IF USING FOR TISSUE SPLITTING, IT IS ADVISED TO SET --downsampleFactor TO HIGHER THAN DEFAULT OF 5')
 	channel = args.channel
 	dsFactor = 1/(2**args.downsampleFactor)
-	I = skio.imread(imagePath, img_num=channel)
+	I = skio.imread(imagePath, img_num=channel, plugin='tifffile')
 	imagesub = resize(I,(int((float(I.shape[0]) * dsFactor)),int((float(I.shape[1]) * dsFactor))))
 	numChan = identifyNumChan(imagePath)
 
@@ -697,6 +697,7 @@ if __name__ == '__main__':
 		np.savetxt(outputPath + os.path.sep + 'centroidsY-X.txt', np.asarray(centroids), fmt='%10.5f')
 		numCores = len(centroids)
 		print(str(numCores) + ' cores detected!')
+		skio.imsave(outputPath + os.path.sep + 'Coremask.tif', np.uint8(coreLabel))
 		estCoreDiamX = np.ones(numCores) * estCoreDiam / dsFactor
 		estCoreDiamY = np.ones(numCores) * estCoreDiam / dsFactor
 	else:
@@ -716,7 +717,9 @@ if __name__ == '__main__':
 		centroids = np.array([ele.centroid for ele in P]) / dsFactor
 		np.savetxt(outputPath + os.path.sep + 'centroidsY-X.txt', np.asarray(centroids), fmt='%10.5f')
 		numCores = len(centroids)
+		skio.imsave(outputPath + os.path.sep + 'Coremask.tif', np.uint8(coreLabel))
 		print(str(numCores) + ' tissues detected!')
+
 		estCoreDiamX = np.array([(ele.bbox[3]-ele.bbox[1])*1.1 for ele in P]) / dsFactor
 		estCoreDiamY = np.array([(ele.bbox[2]-ele.bbox[0])*1.1 for ele in P]) / dsFactor
 
