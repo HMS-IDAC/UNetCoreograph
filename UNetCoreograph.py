@@ -9,7 +9,6 @@ logging.getLogger('tensorflow').setLevel(logging.FATAL)
 import skimage.exposure as sk
 import cv2
 import argparse
-import pytiff
 import tifffile
 import tensorflow as tf
 from skimage.morphology import *
@@ -28,6 +27,7 @@ from scipy.ndimage.filters import uniform_filter
 from scipy.ndimage import gaussian_laplace
 from os.path import *
 from os import listdir, makedirs, remove
+import zarr
 
 
 
@@ -620,7 +620,7 @@ if __name__ == '__main__':
 	parser.add_argument("--downsampleFactor", type=int, default = 5)
 	parser.add_argument("--channel",type = int, default = 0)
 	parser.add_argument("--buffer",type = float, default = 2)
-	parser.add_argument("--outputChan", type=int, nargs = '+', default=[-1])
+	parser.add_argument("--outputChan", type=int, nargs = '+')
 	parser.add_argument("--sensitivity",type = float, default=0.3)
 	parser.add_argument("--useGrid",action='store_true')
 	parser.add_argument("--cluster",action='store_true')
@@ -648,12 +648,13 @@ if __name__ == '__main__':
 	imagesub = resize(I,(int((float(I.shape[0]) * dsFactor)),int((float(I.shape[1]) * dsFactor))))
 	numChan = identifyNumChan(imagePath)
 
+	all_channels = list(range(numChan))
 	outputChan = args.outputChan
-	if len(outputChan)==1:
-		if outputChan[0]==-1:
-			outputChan = [0, numChan-1]
-		else:
-			outputChan.append(outputChan[0])
+	if outputChan is None:
+		outputChan = all_channels
+	for cc in outputChan:
+		assert cc in all_channels
+
 	classProbs = getProbMaps(I, args.downsampleFactor, modelPath)
 
 	if not args.tissue:
@@ -756,17 +757,33 @@ if __name__ == '__main__':
 			y[iCore]=1
 
 		bbox[iCore] = [round(x[iCore]), round(y[iCore]), round(xLim[iCore]), round(yLim[iCore])]
-		coreStack = np.zeros((outputChan[1]-outputChan[0]+1,np.int(round(yLim[iCore])-round(y[iCore])-1),np.int(round(xLim[iCore])-round(x[iCore])-1)),dtype='uint16')
 
-		for iChan in range(outputChan[0],outputChan[1]+1):
-			with pytiff.Tiff(imagePath, "r", encoding='utf-8') as handle:
-				handle.set_page(iChan)
-				coreStack[iChan,:,:] =handle[np.uint32(bbox[iCore][1]):np.uint32(bbox[iCore][3]-1), np.uint32(bbox[iCore][0]):np.uint32(bbox[iCore][2]-1)]
+		zimg = zarr.open(tifffile.imread(imagePath, aszarr=True, series=0, level=0))
+		assert zimg.ndim in (2, 3)
+		
+		slice_row = slice(np.uint32(bbox[iCore][1]), np.uint32(bbox[iCore][3]-1))
+		slice_col = slice(np.uint32(bbox[iCore][0]), np.uint32(bbox[iCore][2]-1))
+		
+		if zimg.ndim == 2:
+			coreStack = zimg[slice_row, slice_col]
+			coreSlice = coreStack
 
-		skio.imsave(outputPath + os.path.sep + str(iCore+1)  + '.tif',np.uint16(coreStack),imagej=True,bigtiff=True)
-		with pytiff.Tiff(imagePath, "r", encoding='utf-8') as handle:
-			handle.set_page(args.channel)
-			coreSlice= handle[np.uint32(bbox[iCore][1]):np.uint32(bbox[iCore][3]-1), np.uint32(bbox[iCore][0]):np.uint32(bbox[iCore][2]-1)]
+		if zimg.ndim == 3:
+			channel_axis = np.argmin(zimg.shape)
+			img_slice = [slice_row, slice_col]
+			img_slice.insert(channel_axis, outputChan)
+			coreStack = zimg.oindex[tuple(img_slice)]
+			
+			# slice single channel
+			img_slice[channel_axis] = channel
+			coreSlice = zimg[tuple(img_slice)]
+
+		tifffile.imwrite(
+			outputPath + os.path.sep + str(iCore+1)  + '.tif',
+			coreStack,
+			imagej=True,
+			bigtiff=True,
+		)
 
 		core = (coreLabel ==(iCore+1))
 		initialmask = core[np.uint32(y[iCore] * dsFactor):np.uint32(yLim[iCore] * dsFactor),
