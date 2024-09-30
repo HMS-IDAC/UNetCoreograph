@@ -4,28 +4,26 @@ import shutil
 import scipy.io as sio
 import os
 os.environ['TF_CPP_MIN_LOG_LEVEL'] = '2'
+os.environ['TF_USE_LEGACY_KERAS'] = '1'
 import logging
 logging.getLogger('tensorflow').setLevel(logging.FATAL)
 import skimage.exposure as sk
 import cv2
 import argparse
-import pytiff
 import tifffile
-import tensorflow as tf
-from skimage.morphology import *
+import zarr
+import tensorflow.compat.v1 as tf
 from skimage.exposure import rescale_intensity
-from skimage.segmentation import chan_vese, find_boundaries, morphological_chan_vese
+from skimage.segmentation import chan_vese, find_boundaries, morphological_chan_vese, watershed
 from skimage.measure import regionprops,label, find_contours
-from skimage.transform import resize
+from skimage.morphology import remove_small_objects, dilation, disk
 from skimage.filters import gaussian, threshold_otsu
 from skimage.feature import peak_local_max,blob_log
 from skimage.color import gray2rgb as gray2rgb
 import skimage.io as skio
-from scipy.ndimage.morphology import binary_fill_holes
 from skimage import img_as_bool
 from skimage.draw import circle_perimeter
-from scipy.ndimage.filters import uniform_filter
-from scipy.ndimage import gaussian_laplace
+from scipy.ndimage import binary_fill_holes, gaussian_laplace, uniform_filter, distance_transform_edt
 from os.path import *
 from os import listdir, makedirs, remove
 
@@ -35,14 +33,23 @@ import sys
 from typing import Any
 
 #sys.path.insert(0, 'C:\\Users\\Public\\Documents\\ImageScience')
-from toolbox.imtools import *
-from toolbox.ftools import *
+from toolbox.imtools import im2double
+from toolbox.ftools import pathjoin, loadData
 from toolbox.PartitionOfImage import PI2D
 
 
 def concat3(lst):
 		return tf.concat(lst,3)
 
+# Work around opencv's refusal to resize a bool array in newer versions.
+def resize_mask(src, dsize):
+	if src.dtype != 'bool':
+		raise ValueError('Only dtype=bool images are supported')
+	src_uint8 = src.view(np.uint8)
+	dst_uint8 = cv2.resize(src_uint8, dsize, interpolation=cv2.INTER_NEAREST)
+	dst = dst_uint8.view(bool)
+	return dst
+                
 class UNet2D:
 	hp = None # hyper-parameters
 	nn = None # network
@@ -90,6 +97,8 @@ class UNet2D:
 		# --------------------------------------------------
 
 		with tf.name_scope('placeholders'):
+			# Workaround to support tf.placeholder until we revise this to use the TF2 API.
+			tf.disable_eager_execution()
 			UNet2D.tfTraining = tf.placeholder(tf.bool, name='training')
 			UNet2D.tfData = tf.placeholder("float", shape=[None,UNet2D.hp['imSize'],UNet2D.hp['imSize'],UNet2D.hp['nChannels']],name='data')
 
@@ -545,16 +554,16 @@ def identifyNumChan(path):
 
 
 def getProbMaps(I,dsFactor,modelPath):
-   hsize = int((float(I.shape[0]) * float(0.5)))
-   vsize = int((float(I.shape[1]) * float(0.5)))
-   imagesub = cv2.resize(I,(vsize,hsize),cv2.INTER_NEAREST)
+   vsize = int((float(I.shape[0]) * float(0.5)))
+   hsize = int((float(I.shape[1]) * float(0.5)))
+   imagesub = cv2.resize(I,(hsize,vsize),interpolation=cv2.INTER_NEAREST)
 
    UNet2D.singleImageInferenceSetup(modelPath, 0)
 
    for iSize in range(dsFactor):
-	   hsize = int((float(I.shape[0]) * float(0.5)))
-	   vsize = int((float(I.shape[1]) * float(0.5)))
-	   I = cv2.resize(I,(vsize,hsize),cv2.INTER_NEAREST)
+	   vsize = int((float(I.shape[0]) * float(0.5)))
+	   hsize = int((float(I.shape[1]) * float(0.5)))
+	   I = cv2.resize(I,(hsize,vsize),interpolation=cv2.INTER_NEAREST)
    I = im2double(I)
    I = im2double(sk.rescale_intensity(I, in_range=(np.min(I), np.max(I)), out_range=(0, 0.983)))
    probMaps = UNet2D.singleImageInference(I,'accumulate',1)
@@ -562,13 +571,13 @@ def getProbMaps(I,dsFactor,modelPath):
    return probMaps 
 
 def coreSegmenterOutput(I,initialmask,findCenter):
-	hsize = int((float(I.shape[0]) * float(0.1)))
-	vsize = int((float(I.shape[1]) * float(0.1)))
-	nucGF = cv2.resize(I,(vsize,hsize),cv2.INTER_CUBIC)
+	vsize = int((float(I.shape[0]) * float(0.1)))
+	hsize = int((float(I.shape[1]) * float(0.1)))
+	nucGF = cv2.resize(I,(hsize,vsize),interpolation=cv2.INTER_CUBIC)
 	#active contours
-	hsize = int(float(nucGF.shape[0]))
-	vsize = int(float(nucGF.shape[1]))
-	initialmask = cv2.resize(initialmask,(vsize,hsize),cv2.INTER_NEAREST)
+	vsize = int(float(nucGF.shape[0]))
+	hsize = int(float(nucGF.shape[1]))
+	initialmask = resize_mask(initialmask,(hsize,vsize))
 	initialmask = dilation(initialmask,disk(15)) >0
 
 	nucGF = gaussian(nucGF,0.7)
@@ -645,7 +654,7 @@ if __name__ == '__main__':
 	channel = args.channel
 	dsFactor = 1/(2**args.downsampleFactor)
 	I = skio.imread(imagePath, img_num=channel, plugin='tifffile')
-	imagesub = resize(I,(int((float(I.shape[0]) * dsFactor)),int((float(I.shape[1]) * dsFactor))))
+	imagesub = cv2.resize(I,(int((float(I.shape[1]) * dsFactor)),int((float(I.shape[0]) * dsFactor))))
 	numChan = identifyNumChan(imagePath)
 
 	outputChan = args.outputChan
@@ -697,7 +706,7 @@ if __name__ == '__main__':
 		np.savetxt(outputPath + os.path.sep + 'centroidsY-X.txt', np.asarray(centroids), fmt='%10.5f')
 		numCores = len(centroids)
 		print(str(numCores) + ' cores detected!')
-		skio.imsave(outputPath + os.path.sep + 'Coremask.tif', np.uint8(coreLabel))
+		skio.imsave(outputPath + os.path.sep + 'Coremask.tif', np.uint8(coreLabel), check_contrast=False)
 		estCoreDiamX = np.ones(numCores) * estCoreDiam / dsFactor
 		estCoreDiamY = np.ones(numCores) * estCoreDiam / dsFactor
 	else:
@@ -717,7 +726,7 @@ if __name__ == '__main__':
 		centroids = np.array([ele.centroid for ele in P]) / dsFactor
 		np.savetxt(outputPath + os.path.sep + 'centroidsY-X.txt', np.asarray(centroids), fmt='%10.5f')
 		numCores = len(centroids)
-		skio.imsave(outputPath + os.path.sep + 'Coremask.tif', np.uint8(coreLabel))
+		skio.imsave(outputPath + os.path.sep + 'Coremask.tif', np.uint8(coreLabel), check_contrast=False)
 		print(str(numCores) + ' tissues detected!')
 
 		estCoreDiamX = np.array([(ele.bbox[3]-ele.bbox[1])*1.1 for ele in P]) / dsFactor
@@ -756,47 +765,45 @@ if __name__ == '__main__':
 			y[iCore]=1
 
 		bbox[iCore] = [round(x[iCore]), round(y[iCore]), round(xLim[iCore]), round(yLim[iCore])]
-		coreStack = np.zeros((outputChan[1]-outputChan[0]+1,np.int(round(yLim[iCore])-round(y[iCore])-1),np.int(round(xLim[iCore])-round(x[iCore])-1)),dtype='uint16')
+		coreStack = np.zeros((outputChan[1]-outputChan[0]+1,int(round(yLim[iCore])-round(y[iCore])-1),int(round(xLim[iCore])-round(x[iCore])-1)),dtype='uint16')
 
+		zimg = zarr.open(tifffile.imread(imagePath, level=0, aszarr=True))
+                
 		for iChan in range(outputChan[0],outputChan[1]+1):
-			with pytiff.Tiff(imagePath, "r", encoding='utf-8') as handle:
-				handle.set_page(iChan)
-				coreStack[iChan,:,:] =handle[np.uint32(bbox[iCore][1]):np.uint32(bbox[iCore][3]-1), np.uint32(bbox[iCore][0]):np.uint32(bbox[iCore][2]-1)]
+			coreStack[iChan,:,:] = zimg[iChan, np.uint32(bbox[iCore][1]):np.uint32(bbox[iCore][3]-1), np.uint32(bbox[iCore][0]):np.uint32(bbox[iCore][2]-1)]
+		tifffile.imwrite(outputPath + os.path.sep + str(iCore+1)  + '.tif',np.uint16(coreStack),imagej=True,bigtiff=True)
 
-		skio.imsave(outputPath + os.path.sep + str(iCore+1)  + '.tif',np.uint16(coreStack),imagej=True,bigtiff=True)
-		with pytiff.Tiff(imagePath, "r", encoding='utf-8') as handle:
-			handle.set_page(args.channel)
-			coreSlice= handle[np.uint32(bbox[iCore][1]):np.uint32(bbox[iCore][3]-1), np.uint32(bbox[iCore][0]):np.uint32(bbox[iCore][2]-1)]
+		coreSlice = zimg[args.channel, np.uint32(bbox[iCore][1]):np.uint32(bbox[iCore][3]-1), np.uint32(bbox[iCore][0]):np.uint32(bbox[iCore][2]-1)]
 
 		core = (coreLabel ==(iCore+1))
 		initialmask = core[np.uint32(y[iCore] * dsFactor):np.uint32(yLim[iCore] * dsFactor),
 					  np.uint32(x[iCore] * dsFactor):np.uint32(xLim[iCore] * dsFactor)]
 		if not args.tissue:
-			initialmask = resize(initialmask,size(coreSlice),cv2.INTER_NEAREST)
+			initialmask = resize_mask(initialmask,coreSlice.shape[::-1])
 
-			singleProbMap = classProbs[np.uint32(y[iCore]*dsFactor):np.uint32(yLim[iCore]*dsFactor),np.uint32(x[iCore]*dsFactor):np.uint32(xLim[iCore]*dsFactor)]
-			singleProbMap = resize(np.uint8(255*singleProbMap),size(coreSlice),cv2.INTER_NEAREST)
+			#singleProbMap = classProbs[np.uint32(y[iCore]*dsFactor):np.uint32(yLim[iCore]*dsFactor),np.uint32(x[iCore]*dsFactor):np.uint32(xLim[iCore]*dsFactor)]
+			#singleProbMap = cv2.resize(np.uint8(255*singleProbMap),coreSlice.shape[::-1],interpolation=cv2.INTER_NEAREST)
 			TMAmask = coreSegmenterOutput(coreSlice,initialmask,False)
 		else:
-			Irs = resize(coreSlice,(int((float(coreSlice.shape[0]) * 0.25)),int((float(coreSlice.shape[1]) * 0.25))))
+			Irs = cv2.resize(coreSlice,(int((float(coreSlice.shape[1]) * 0.25)),int((float(coreSlice.shape[0]) * 0.25))))
 			TMAmask = coreSegmenterOutput(Irs, np.uint8(initialmask), False)
 
 		if np.sum(TMAmask)==0:
-			TMAmask = np.ones(TMAmask.shape)
+			TMAmask = np.ones(TMAmask.shape, dtype=bool)
 		vsize = int(float(coreSlice.shape[0]))
 		hsize = int(float(coreSlice.shape[1]))
-		masksub = resize(resize(TMAmask,(vsize,hsize),cv2.INTER_NEAREST),(int((float(coreSlice.shape[0])*dsFactor)),int((float(coreSlice.shape[1])*dsFactor))),cv2.INTER_NEAREST)
+		masksub = resize_mask(resize_mask(TMAmask,(hsize,vsize)),(int((float(coreSlice.shape[1])*dsFactor)),int((float(coreSlice.shape[0])*dsFactor))))
 		singleMaskTMA[int(y[iCore]*dsFactor):int(y[iCore]*dsFactor)+masksub.shape[0],int(x[iCore]*dsFactor):int(x[iCore]*dsFactor)+masksub.shape[1]]=masksub
-		maskTMA = maskTMA + resize(singleMaskTMA,maskTMA.shape,cv2.INTER_NEAREST)
+		maskTMA = maskTMA + cv2.resize(singleMaskTMA,maskTMA.shape[::-1],interpolation=cv2.INTER_NEAREST)
 
 		cv2.putText(imagesub, str(iCore+1), (int(P[iCore].centroid[1]),int(P[iCore].centroid[0])), 0, 0.5, (0,255,0), 1, cv2.LINE_AA)
 		
-		skio.imsave(maskOutputPath + os.path.sep + str(iCore+1)  + '_mask.tif',np.uint8(TMAmask))
+		skio.imsave(maskOutputPath + os.path.sep + str(iCore+1)  + '_mask.tif',np.uint8(TMAmask), check_contrast=False)
 		print('Segmented core/tissue ' + str(iCore+1))
 		
 	boundaries = find_boundaries(maskTMA)
 	imagesub[boundaries==1] = 255
-	skio.imsave(outputPath + os.path.sep + 'TMA_MAP.tif' ,imagesub)
+	skio.imsave(outputPath + os.path.sep + 'TMA_MAP.tif' ,imagesub, check_contrast=False)
 	print('Segmented all cores/tissues!')
 
 #restore GPU to 0
