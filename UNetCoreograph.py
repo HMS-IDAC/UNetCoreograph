@@ -860,8 +860,8 @@ def imshowpair(A, B):
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser()
-    parser.add_argument("--imagePath")
-    parser.add_argument("--outputPath")
+    parser.add_argument("--imagePath", required=True)
+    parser.add_argument("--outputPath", required=True)
     parser.add_argument("--maskPath")
     parser.add_argument("--tissue", action="store_true")
     parser.add_argument("--downsampleFactor", type=int, default=5)
