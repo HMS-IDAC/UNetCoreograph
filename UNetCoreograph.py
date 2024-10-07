@@ -28,7 +28,6 @@ from os.path import *
 from os import listdir, makedirs, remove
 
 
-
 import sys
 from typing import Any
 
@@ -49,7 +48,7 @@ def resize_mask(src, dsize):
 	dst_uint8 = cv2.resize(src_uint8, dsize, interpolation=cv2.INTER_NEAREST)
 	dst = dst_uint8.view(bool)
 	return dst
-                
+
 class UNet2D:
 	hp = None # hyper-parameters
 	nn = None # network
@@ -654,6 +653,7 @@ if __name__ == '__main__':
 	channel = args.channel
 	dsFactor = 1/(2**args.downsampleFactor)
 	I = skio.imread(imagePath, img_num=channel, plugin='tifffile')
+	Ishape = I.shape
 	imagesub = cv2.resize(I,(int((float(I.shape[1]) * dsFactor)),int((float(I.shape[0]) * dsFactor))))
 	numChan = identifyNumChan(imagePath)
 
@@ -664,6 +664,7 @@ if __name__ == '__main__':
 		else:
 			outputChan.append(outputChan[0])
 	classProbs = getProbMaps(I, args.downsampleFactor, modelPath)
+	del I
 
 	if not args.tissue:
 		print('TMA mode selected')
@@ -738,7 +739,6 @@ if __name__ == '__main__':
 
 	singleMaskTMA = np.zeros(imagesub.shape)
 	maskTMA = np.zeros(imagesub.shape)
-	bbox = [None] * numCores
 	imagesub = imagesub/np.percentile(imagesub,99.9)
 	imagesub = (imagesub * 255).round().astype(np.uint8)
 	imagesub = gray2rgb(imagesub)
@@ -746,34 +746,42 @@ if __name__ == '__main__':
 	xLim=np.zeros(numCores)
 	y=np.zeros(numCores)
 	yLim=np.zeros(numCores)
-	
-# segmenting each core   	
+
+	zimg = zarr.open(tifffile.imread(imagePath, level=0, aszarr=True))
+	num_channels = outputChan[1] - outputChan[0] + 1
+
+	# segmenting each core   	
 	#######################
 	for iCore in range(numCores):
 		x[iCore] = centroids[iCore,1] - estCoreDiamX[iCore]/2
 		xLim[iCore] = x[iCore]+estCoreDiamX[iCore]
-		if xLim[iCore] > I.shape[1]:
-			xLim[iCore] = I.shape[1]
-		if x[iCore]<1:
-			x[iCore]=1
+		if xLim[iCore] > Ishape[1]:
+			xLim[iCore] = Ishape[1]
+		if x[iCore] < 0:
+			x[iCore]=0
 
 		y[iCore] = centroids[iCore,0] - estCoreDiamY[iCore]/2
 		yLim[iCore] = y[iCore] + estCoreDiamY[iCore]
-		if yLim[iCore] > I.shape[0]:
-			yLim[iCore] = I.shape[0]
-		if y[iCore]<1:
-			y[iCore]=1
+		if yLim[iCore] > Ishape[0]:
+			yLim[iCore] = Ishape[0]
+		if y[iCore] < 0:
+			y[iCore] = 0
 
-		bbox[iCore] = [round(x[iCore]), round(y[iCore]), round(xLim[iCore]), round(yLim[iCore])]
-		coreStack = np.zeros((outputChan[1]-outputChan[0]+1,int(round(yLim[iCore])-round(y[iCore])-1),int(round(xLim[iCore])-round(x[iCore])-1)),dtype='uint16')
+		xslice = slice(int(round(x[iCore])), int(round(xLim[iCore])))
+		yslice = slice(int(round(y[iCore])), int(round(yLim[iCore])))
+		dshape = (num_channels, yslice.stop - yslice.start, xslice.stop - xslice.start)
+		def data():
+			if zimg.ndim == 2:
+				yield zimg[yslice, xslice]
+			else:
+				for c in range(outputChan[0], outputChan[1] + 1):
+					yield zimg[c, yslice, xslice]
+		tifffile.imwrite(outputPath + os.path.sep + str(iCore+1)  + '.tif', data(), shape=dshape, dtype=zimg.dtype, imagej=True, bigtiff=True)
 
-		zimg = zarr.open(tifffile.imread(imagePath, level=0, aszarr=True))
-                
-		for iChan in range(outputChan[0],outputChan[1]+1):
-			coreStack[iChan,:,:] = zimg[iChan, np.uint32(bbox[iCore][1]):np.uint32(bbox[iCore][3]-1), np.uint32(bbox[iCore][0]):np.uint32(bbox[iCore][2]-1)]
-		tifffile.imwrite(outputPath + os.path.sep + str(iCore+1)  + '.tif',np.uint16(coreStack),imagej=True,bigtiff=True)
-
-		coreSlice = zimg[args.channel, np.uint32(bbox[iCore][1]):np.uint32(bbox[iCore][3]-1), np.uint32(bbox[iCore][0]):np.uint32(bbox[iCore][2]-1)]
+		if zimg.ndim == 2:
+			coreSlice = zimg[yslice, xslice]
+		else:
+			coreSlice = zimg[args.channel, yslice, xslice]
 
 		core = (coreLabel ==(iCore+1))
 		initialmask = core[np.uint32(y[iCore] * dsFactor):np.uint32(yLim[iCore] * dsFactor),
