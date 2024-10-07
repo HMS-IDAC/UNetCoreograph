@@ -1,13 +1,10 @@
 import numpy as np
-from scipy import misc as sm
 import shutil
-import scipy.io as sio
 import os
 os.environ['TF_CPP_MIN_LOG_LEVEL'] = '2'
 os.environ['TF_USE_LEGACY_KERAS'] = '1'
 import logging
 logging.getLogger('tensorflow').setLevel(logging.FATAL)
-import skimage.exposure as sk
 import cv2
 import argparse
 import tifffile
@@ -16,22 +13,16 @@ import tensorflow.compat.v1 as tf
 from skimage.exposure import rescale_intensity
 from skimage.segmentation import chan_vese, find_boundaries, morphological_chan_vese, watershed
 from skimage.measure import regionprops,label, find_contours
-from skimage.morphology import remove_small_objects, dilation, disk
+from skimage.morphology import remove_small_objects, dilation, disk, binary_closing, h_maxima
 from skimage.filters import gaussian, threshold_otsu
 from skimage.feature import peak_local_max,blob_log
 from skimage.color import gray2rgb as gray2rgb
-import skimage.io as skio
-from skimage import img_as_bool
-from skimage.draw import circle_perimeter
-from scipy.ndimage import binary_fill_holes, gaussian_laplace, uniform_filter, distance_transform_edt
-from os.path import *
+from scipy.ndimage import binary_fill_holes, distance_transform_edt
 from os import listdir, makedirs, remove
 
 
 import sys
-from typing import Any
 
-#sys.path.insert(0, 'C:\\Users\\Public\\Documents\\ImageScience')
 from toolbox.imtools import im2double
 from toolbox.ftools import pathjoin, loadData
 from toolbox.PartitionOfImage import PI2D
@@ -564,7 +555,7 @@ def getProbMaps(I,dsFactor,modelPath):
 	   hsize = int((float(I.shape[1]) * float(0.5)))
 	   I = cv2.resize(I,(hsize,vsize),interpolation=cv2.INTER_NEAREST)
    I = im2double(I)
-   I = im2double(sk.rescale_intensity(I, in_range=(np.min(I), np.max(I)), out_range=(0, 0.983)))
+   I = im2double(rescale_intensity(I, in_range=(np.min(I), np.max(I)), out_range=(0, 0.983)))
    probMaps = UNet2D.singleImageInference(I,'accumulate',1)
    UNet2D.singleImageInferenceCleanup()
    return probMaps 
@@ -652,7 +643,7 @@ if __name__ == '__main__':
 		'WARNING! IF USING FOR TISSUE SPLITTING, IT IS ADVISED TO SET --downsampleFactor TO HIGHER THAN DEFAULT OF 5')
 	channel = args.channel
 	dsFactor = 1/(2**args.downsampleFactor)
-	I = skio.imread(imagePath, img_num=channel, plugin='tifffile')
+	I = tifffile.imread(imagePath, key=channel)
 	Ishape = I.shape
 	imagesub = cv2.resize(I,(int((float(I.shape[1]) * dsFactor)),int((float(I.shape[0]) * dsFactor))))
 	numChan = identifyNumChan(imagePath)
@@ -707,7 +698,7 @@ if __name__ == '__main__':
 		np.savetxt(outputPath + os.path.sep + 'centroidsY-X.txt', np.asarray(centroids), fmt='%10.5f')
 		numCores = len(centroids)
 		print(str(numCores) + ' cores detected!')
-		skio.imsave(outputPath + os.path.sep + 'Coremask.tif', np.uint8(coreLabel), check_contrast=False)
+		tifffile.imwrite(outputPath + os.path.sep + 'Coremask.tif', np.uint8(coreLabel), compression='zlib', predictor=True)
 		estCoreDiamX = np.ones(numCores) * estCoreDiam / dsFactor
 		estCoreDiamY = np.ones(numCores) * estCoreDiam / dsFactor
 	else:
@@ -719,7 +710,9 @@ if __name__ == '__main__':
 
 		## watershed
 		Idist = distance_transform_edt(coreMask)
-		markers = peak_local_max(h_maxima(Idist,20),indices=False)
+		marker_coords = peak_local_max(h_maxima(Idist,20))
+		markers = np.zeros_like(Idist, bool)
+		markers[marker_coords] = True
 		markers = label(markers).astype(np.int8)
 		coreLabel = watershed(-Idist, markers, watershed_line=True,mask = coreMask)
 
@@ -727,7 +720,7 @@ if __name__ == '__main__':
 		centroids = np.array([ele.centroid for ele in P]) / dsFactor
 		np.savetxt(outputPath + os.path.sep + 'centroidsY-X.txt', np.asarray(centroids), fmt='%10.5f')
 		numCores = len(centroids)
-		skio.imsave(outputPath + os.path.sep + 'Coremask.tif', np.uint8(coreLabel), check_contrast=False)
+		tifffile.imwrite(outputPath + os.path.sep + 'Coremask.tif', np.uint8(coreLabel), compression='zlib', predictor=True)
 		print(str(numCores) + ' tissues detected!')
 
 		estCoreDiamX = np.array([(ele.bbox[3]-ele.bbox[1])*1.1 for ele in P]) / dsFactor
@@ -776,7 +769,7 @@ if __name__ == '__main__':
 			else:
 				for c in range(outputChan[0], outputChan[1] + 1):
 					yield zimg[c, yslice, xslice]
-		tifffile.imwrite(outputPath + os.path.sep + str(iCore+1)  + '.tif', data(), shape=dshape, dtype=zimg.dtype, imagej=True, bigtiff=True)
+		tifffile.imwrite(outputPath + os.path.sep + str(iCore+1)  + '.tif', data(), shape=dshape, dtype=zimg.dtype, imagej=True, bigtiff=True, compression='zlib', predictor=True)
 
 		if zimg.ndim == 2:
 			coreSlice = zimg[yslice, xslice]
@@ -794,7 +787,7 @@ if __name__ == '__main__':
 			TMAmask = coreSegmenterOutput(coreSlice,initialmask,False)
 		else:
 			Irs = cv2.resize(coreSlice,(int((float(coreSlice.shape[1]) * 0.25)),int((float(coreSlice.shape[0]) * 0.25))))
-			TMAmask = coreSegmenterOutput(Irs, np.uint8(initialmask), False)
+			TMAmask = coreSegmenterOutput(Irs, initialmask, False)
 
 		if np.sum(TMAmask)==0:
 			TMAmask = np.ones(TMAmask.shape, dtype=bool)
@@ -806,12 +799,12 @@ if __name__ == '__main__':
 
 		cv2.putText(imagesub, str(iCore+1), (int(P[iCore].centroid[1]),int(P[iCore].centroid[0])), 0, 0.5, (0,255,0), 1, cv2.LINE_AA)
 		
-		skio.imsave(maskOutputPath + os.path.sep + str(iCore+1)  + '_mask.tif',np.uint8(TMAmask), check_contrast=False)
+		tifffile.imwrite(maskOutputPath + os.path.sep + str(iCore+1)  + '_mask.tif',np.uint8(TMAmask), compression='zlib', predictor=True)
 		print('Segmented core/tissue ' + str(iCore+1))
 		
 	boundaries = find_boundaries(maskTMA)
 	imagesub[boundaries==1] = 255
-	skio.imsave(outputPath + os.path.sep + 'TMA_MAP.tif' ,imagesub, check_contrast=False)
+	tifffile.imwrite(outputPath + os.path.sep + 'TMA_MAP.tif' ,imagesub, compression='zlib', predictor=True)
 	print('Segmented all cores/tissues!')
 
 #restore GPU to 0
