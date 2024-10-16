@@ -32,6 +32,7 @@ from skimage.segmentation import (
     morphological_chan_vese,
     watershed,
 )
+from skimage.transform import downscale_local_mean
 
 from toolbox.ftools import loadData, pathjoin
 from toolbox.imtools import im2double
@@ -52,6 +53,64 @@ def resize_mask(src, dsize):
     dst_uint8 = cv2.resize(src_uint8, dsize, interpolation=cv2.INTER_NEAREST)
     dst = dst_uint8.view(bool)
     return dst
+
+
+def write_ometiff_pyramid(path, channel_data, dshape, dtype, tile):
+    num_channels = dshape[0]
+    plane_shape = np.array(dshape[1:])
+    num_levels = int(max(np.ceil(np.log2(max(plane_shape) / tile)) + 1, 1))
+    level_factors = 2 ** np.arange(num_levels)
+    level_plane_shapes = np.ceil(plane_shape / level_factors[:, None]).astype(int)
+    level_shapes = np.hstack([np.full([num_levels, 1], num_channels), level_plane_shapes])
+    tile_shape = (tile, tile)
+
+    def data_0():
+        for cimg in channel_data:
+            for y in range(0, dshape[1], tile):
+                for x in range(0, dshape[2], tile):
+                    # Returning a copy makes the array contiguous, avoiding
+                    # a severely unoptimized code path in ndarray.tofile.
+                    yield cimg[y : y + tile, x : x + tile].copy()
+
+    def data_n(level):
+        num_channels, h, w = level_shapes[level]
+        tiff = tifffile.TiffFile(path)
+        zimg = zarr.open(tiff.aszarr(series=0, level=level-1, squeeze=False))
+        for c in range(num_channels):
+            th = tile * 2
+            tw = tile * 2
+            for y in range(0, zimg.shape[1], th):
+                for x in range(0, zimg.shape[2], tw):
+                    a = zimg[c, y : y + th, x : x + tw, 0]
+                    a = downscale_local_mean(a, (2, 2))
+                    if np.issubdtype(zimg.dtype, np.integer):
+                        a = np.around(a)
+                    a = a.astype(zimg.dtype)
+                    yield a
+
+    with tifffile.TiffWriter(path, ome=True, bigtiff=True) as writer:
+        writer.write(
+            data=data_0(),
+            shape=level_shapes[0],
+            dtype=dtype,
+            subifds=num_levels - 1,
+            tile=tile_shape,
+            compression="adobe_deflate",
+            predictor=True,
+            software="Coreograph",
+        )
+        writer.filehandle.flush()
+        for level, shape in enumerate(level_shapes[1:], 1):
+            writer.write(
+                data=data_n(level),
+                shape=shape,
+                subfiletype=1,
+                dtype=dtype,
+                tile=tile_shape,
+                compression="adobe_deflate",
+                predictor=True,
+            )
+            writer.filehandle.flush()
 
 
 class UNet2D:
@@ -1042,23 +1101,16 @@ if __name__ == "__main__":
         yslice = slice(int(round(y[iCore])), int(round(yLim[iCore])))
         dshape = (num_channels, yslice.stop - yslice.start, xslice.stop - xslice.start)
 
-        def data():
+        def channel_data():
             if zimg.ndim == 2:
                 yield zimg[yslice, xslice]
             else:
                 for c in range(outputChan[0], outputChan[1] + 1):
                     yield zimg[c, yslice, xslice]
 
-        tifffile.imwrite(
-            outputPath + os.path.sep + str(iCore + 1) + ".tif",
-            data(),
-            shape=dshape,
-            dtype=zimg.dtype,
-            imagej=True,
-            bigtiff=True,
-            compression="zlib",
-            predictor=True,
-        )
+        tiff_out_path = outputPath + os.path.sep + str(iCore + 1) + ".ome.tif"
+        tile = 1024 if args.tissue else 512
+        write_ometiff_pyramid(tiff_out_path, channel_data(), dshape, zimg.dtype, tile)
 
         if zimg.ndim == 2:
             coreSlice = zimg[yslice, xslice]
