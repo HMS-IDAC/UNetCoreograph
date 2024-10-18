@@ -6,6 +6,15 @@ RUN apt-get update \
 
 RUN pip install \
     --no-cache-dir \
-    cython scikit-image matplotlib tifffile scipy opencv-python zarr tensorflow tf_keras
+    cython \
+    imagecodecs \
+    matplotlib \
+    opencv-python \
+    scikit-image \
+    scipy \
+    tensorflow \
+    tf_keras \
+    tifffile \
+    zarr
 
 COPY . /app
