@@ -15,6 +15,6 @@ RUN pip install \
     tensorflow \
     tf_keras \
     tifffile \
-    zarr
+    zarr==2.18.4
 
 COPY . /app
