@@ -1,4 +1,4 @@
-name: dockerhub
+name: test-build
 
 on: workflow_dispatch
 
