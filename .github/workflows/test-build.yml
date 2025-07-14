@@ -84,7 +84,7 @@ jobs:
         uses: docker/metadata-action@v5
         with:
           images: labsyspharm/unetcoreograph
-          tags: type=semver,pattern={{raw}},value=test
+          tags: type=semver,pattern={{version}},value=2.4.4-beta
 
       - name: Create manifest list and push
         working-directory: ${{ runner.temp }}/digests
@@ -94,4 +94,4 @@ jobs:
 
       - name: Inspect image
         run: |
-          docker buildx imagetools inspect labsyspharm/unetcoreograph:test
+          docker buildx imagetools inspect labsyspharm/unetcoreograph:${{ steps.meta.outputs.version }}
