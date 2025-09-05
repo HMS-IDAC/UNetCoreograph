@@ -9,7 +9,7 @@ RUN pip install \
     cython \
     imagecodecs \
     matplotlib \
-    ome-types \
+    ome-types[pint] \
     opencv-python \
     scikit-image \
     scipy \
