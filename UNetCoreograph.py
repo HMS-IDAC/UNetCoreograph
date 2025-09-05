@@ -13,6 +13,7 @@ os.environ["TF_USE_LEGACY_KERAS"] = "1"
 import tensorflow.compat.v1 as tf
 import tifffile
 import zarr
+import ome_types
 from scipy.ndimage import binary_fill_holes, distance_transform_edt
 from skimage.color import gray2rgb as gray2rgb
 from skimage.exposure import rescale_intensity
@@ -55,7 +56,7 @@ def resize_mask(src, dsize):
     return dst
 
 
-def write_ometiff_pyramid(path, channel_data, dshape, dtype, tile):
+def write_ometiff_pyramid(path, channel_data, dshape, dtype, tile, metadata):
     num_channels = dshape[0]
     plane_shape = np.array(dshape[1:])
     num_levels = int(max(np.ceil(np.log2(max(plane_shape) / tile)) + 1, 1))
@@ -63,6 +64,13 @@ def write_ometiff_pyramid(path, channel_data, dshape, dtype, tile):
     level_plane_shapes = np.ceil(plane_shape / level_factors[:, None]).astype(int)
     level_shapes = np.hstack([np.full([num_levels, 1], num_channels), level_plane_shapes])
     tile_shape = (tile, tile)
+    if metadata:
+        mpx = metadata["Pixels"]
+        resolution = (10000 / mpx["PhysicalSizeX"], 10000 / mpx["PhysicalSizeY"])
+        resolution_unit = "centimeter"
+    else:
+        resolution = None
+        resolution_unit = None
 
     def data_0():
         for cimg in channel_data:
@@ -98,6 +106,9 @@ def write_ometiff_pyramid(path, channel_data, dshape, dtype, tile):
             compression="adobe_deflate",
             predictor=True,
             software="Coreograph",
+            resolution=resolution,
+            resolutionunit=resolution_unit,
+            metadata=metadata,
         )
         writer.filehandle.flush()
         for level, shape in enumerate(level_shapes[1:], 1):
@@ -951,6 +962,30 @@ if __name__ == "__main__":
     channel = args.channel
     dsFactor = 1 / (2**args.downsampleFactor)
     I = tifffile.imread(imagePath, key=channel)
+    try:
+        ome = ome_types.from_tiff(imagePath)
+        px = ome.images[0].pixels
+        psize_unit = "µm"
+        psize_x = px.physical_size_x_quantity.to(psize_unit).m
+        psize_y = px.physical_size_y_quantity.to(psize_unit).m
+        metadata = {
+            "Pixels": {
+                "PhysicalSizeX": psize_x,
+                "PhysicalSizeXUnit": psize_unit,
+                "PhysicalSizeY": psize_y,
+                "PhysicalSizeYUnit": psize_unit,
+            }
+        }
+        print("Detected OME-TIFF metadata in input image to be copied into output core images:")
+        print(metadata)
+    except Exception as e:
+        metadata = {}
+        print(
+            "WARNING! Could not extract OME-XML metadata from input image."
+            " Either image is not an OME-TIFF or key metadata is not present."
+            " Internal error message was:",
+            e
+        )
     Ishape = I.shape
     imagesub = cv2.resize(
         I, (int((float(I.shape[1]) * dsFactor)), int((float(I.shape[0]) * dsFactor)))
@@ -1110,7 +1145,7 @@ if __name__ == "__main__":
 
         tiff_out_path = outputPath + os.path.sep + str(iCore + 1) + ".ome.tif"
         tile = 1024 if args.tissue else 512
-        write_ometiff_pyramid(tiff_out_path, channel_data(), dshape, zimg.dtype, tile)
+        write_ometiff_pyramid(tiff_out_path, channel_data(), dshape, zimg.dtype, tile, metadata)
 
         if zimg.ndim == 2:
             coreSlice = zimg[yslice, xslice]
