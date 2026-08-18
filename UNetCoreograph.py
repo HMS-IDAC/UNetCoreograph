@@ -1071,7 +1071,7 @@ if __name__ == "__main__":
         Idist = distance_transform_edt(coreMask)
         marker_coords = peak_local_max(h_maxima(Idist, 20))
         markers = np.zeros_like(Idist, bool)
-        markers[marker_coords] = True
+        markers[tuple(marker_coords.T)] = True
         markers = label(markers).astype(np.int8)
         coreLabel = watershed(-Idist, markers, watershed_line=True, mask=coreMask)
 
