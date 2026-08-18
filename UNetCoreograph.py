@@ -831,35 +831,8 @@ class UNet2D:
         return PI2D.getValidOutput()
 
 
-def identifyNumChan(path):
-
-    s = tifffile.TiffFile(path).series[0]
-    return s.shape[0] if len(s.shape) > 2 else 1
-    # shape = tiff.pages[0].shape
-    # tiff = tifffile.TiffFile(path)
-    # for i, page in enumerate(tiff.pages):
-    #    print(page.shape)
-    #    if page.shape != shape:
-    # 	   numChan = i
-    # 	   return numChan
-    # 	   break
-
-
-# 	   else:
-# 		   raise Exception("Did not find any pyramid subresolutions")
-
-
-def getProbMaps(I, dsFactor, modelPath):
-    vsize = int((float(I.shape[0]) * float(0.5)))
-    hsize = int((float(I.shape[1]) * float(0.5)))
-    imagesub = cv2.resize(I, (hsize, vsize), interpolation=cv2.INTER_NEAREST)
-
+def getProbMaps(I, modelPath):
     UNet2D.singleImageInferenceSetup(modelPath, 0)
-
-    for iSize in range(dsFactor):
-        vsize = int((float(I.shape[0]) * float(0.5)))
-        hsize = int((float(I.shape[1]) * float(0.5)))
-        I = cv2.resize(I, (hsize, vsize), interpolation=cv2.INTER_NEAREST)
     I = im2double(I)
     I = im2double(
         rescale_intensity(I, in_range=(np.min(I), np.max(I)), out_range=(0, 0.983))
@@ -956,12 +929,12 @@ if __name__ == "__main__":
     # 		shutil.rmtree(outputPath)
     if not os.path.exists(maskOutputPath):
         os.makedirs(maskOutputPath)
-    print(
-        "WARNING! IF USING FOR TISSUE SPLITTING, IT IS ADVISED TO SET --downsampleFactor TO HIGHER THAN DEFAULT OF 5"
-    )
+    if args.tissue and args.downsampleFactor == 5:
+        print(
+            "WARNING! IF USING FOR TISSUE SPLITTING, IT IS ADVISED TO SET --downsampleFactor TO HIGHER THAN DEFAULT OF 5"
+        )
     channel = args.channel
     dsFactor = 1 / (2**args.downsampleFactor)
-    I = tifffile.imread(imagePath, key=channel)
     try:
         ome = ome_types.from_tiff(imagePath)
         px = ome.images[0].pixels
@@ -986,11 +959,28 @@ if __name__ == "__main__":
             " Internal error message was:",
             e
         )
-    Ishape = I.shape
-    imagesub = cv2.resize(
-        I, (int((float(I.shape[1]) * dsFactor)), int((float(I.shape[0]) * dsFactor)))
-    )
-    numChan = identifyNumChan(imagePath)
+    tiff = tifffile.TiffFile(imagePath)
+    series = tiff.series[0]
+    Ishape = np.array(series.shape[-2:])
+    target_shape = (Ishape * dsFactor).astype(int)
+    level_series = next(lv for lv in series.levels[::-1] if all(lv.shape[-2:] >= target_shape))
+    ls = level_series.shape[-2:]
+    if len(series.levels) > 1:
+        print(
+            f"Pyramid detected. Loading closest level ({ls[1]} x {ls[0]})"
+            f" and rescaling to ({target_shape[1]} x {target_shape[0]})."
+        )
+    else:
+        print(
+            "No pyramid present in source image. Loading full-size image"
+            f"({Ishape[1]} x {Ishape[0]}) and downsampling."
+        )
+    if len(series.shape) == 2:
+        numChan = 1
+    else:
+        numChan = series.shape[0]
+        level_series = level_series[channel]
+    imagesub = cv2.resize(level_series.asarray(), target_shape[::-1])
 
     outputChan = args.outputChan
     if len(outputChan) == 1:
@@ -998,8 +988,8 @@ if __name__ == "__main__":
             outputChan = [0, numChan - 1]
         else:
             outputChan.append(outputChan[0])
-    classProbs = getProbMaps(I, args.downsampleFactor, modelPath)
-    del I
+
+    classProbs = getProbMaps(imagesub, modelPath)
 
     if not args.tissue:
         print("TMA mode selected")
@@ -1112,7 +1102,7 @@ if __name__ == "__main__":
     y = np.zeros(numCores)
     yLim = np.zeros(numCores)
 
-    zimg = zarr.open(tifffile.imread(imagePath, level=0, aszarr=True))
+    zimg = zarr.open(tiff.aszarr(level=0))
     num_channels = outputChan[1] - outputChan[0] + 1
 
     # segmenting each core
